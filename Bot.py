@@ -3,7 +3,11 @@ from AddressBook import *
 
 class Bot:
     def __init__(self):
-        self.book = AddressBook()
+        self.book = AddressBook(
+            logger=LoggerStudy(),
+            data_manager=LocalDataManager(logger=LoggerStudy()),
+            birthday=CongratulateBirthday()
+        )
 
     def handle(self, action):
         if action == 'add':
@@ -35,12 +39,12 @@ class Bot:
             return self.book.remove(pattern)
         elif action == 'save':
             file_name = input("File name: ")
-            return self.book.save(file_name)
+            return self.book.data_manager.save_data(file_name)
         elif action == 'load':
             file_name = input("File name: ")
-            return self.book.load(file_name)
+            return self.book.data_manager.load_data(file_name)
         elif action == 'congratulate':
-            print(self.book.congratulate())
+            print(self.book.congratulate_birthday())
         elif action == 'view':
             print(self.book)
         elif action == 'exit':

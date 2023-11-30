@@ -1,14 +1,114 @@
-from datetime import datetime as dt, timedelta
+from datetime import timedelta, datetime
 from collections import UserList
 import pickle
+from enum import Enum
+
 from info import *
 import os
 
 
+class LoggerInterface(ABC):
+    @abstractmethod
+    def log(self, message):
+        pass
+
+
+class LoggerStudy(LoggerInterface):
+    def log(self, action):
+        current_time = dt.strftime(dt.now(), '%H:%M:%S')
+        message = f'[{current_time}] {action}'
+        with open('logs.txt', 'a') as file:
+            file.write(f'{message}\n')
+
+
+class DataManagerInterface(ABC):
+    @abstractmethod
+    def save_data(self, file_name):
+        pass
+
+    @abstractmethod
+    def load_data(self, file_name):
+        pass
+
+
+class LocalDataManager(DataManagerInterface):
+    def __init__(self, logger: LoggerInterface):
+        self.logger = logger
+
+    def save_data(self, file_name):
+        with open(file_name + '.bin', 'wb') as file:
+            pickle.dump(self.data, file)
+        self.logger.log("Addressbook has been saved!")
+
+    def load_data(self, file_name):
+        emptyness = os.stat(file_name + '.bin')
+        if emptyness.st_size != 0:
+            with open(file_name + '.bin', 'rb') as file:
+                self.data = pickle.load(file)
+            self.logger.log("Addressbook has been loaded!")
+        else:
+            self.logger.log('Adressbook has been created!')
+        return self.data
+
+
+class Weekday(Enum):
+    MONDAY = 'Monday'
+    TUESDAY = 'Tuesday'
+    WEDNESDAY = 'Wednesday'
+    THURSDAY = 'Thursday'
+    FRIDAY = 'Friday'
+    SATURDAY = 'Saturday'
+    SUNDAY = 'Sunday'
+
+
+class DateTimeManager:
+    @staticmethod
+    def get_current_week():
+        now = dt.now()
+        current_weekday = now.weekday()
+        if current_weekday < 5:
+            week_start = now - timedelta(days=2 + current_weekday)
+        else:
+            week_start = now - timedelta(days=current_weekday - 5)
+        return [week_start.date(), week_start.date() + timedelta(days=7)]
+
+
+class CongratulateInterface(ABC):
+    @abstractmethod
+    def value_of(self, data):
+        pass
+
+
+class CongratulateBirthday:
+    @staticmethod
+    def value_of(data):
+        current_year = datetime.now().year
+        current_week_start, current_week_end = DateTimeManager.get_current_week()
+        congratulate = {day.value: [] for day in Weekday}
+        for account in data:
+            if account['birthday']:
+                new_birthday = account['birthday'].replace(year=current_year)
+                if current_week_start <= new_birthday.date() < current_week_end:
+                    weekday = Weekday(new_birthday.strftime(
+                        "%A")).value
+                    congratulate[weekday].append(account['name'])
+        return '\n'.join(
+            [f"{day}: {' '.join(names)}" for day, names in congratulate.items()
+             if names]) \
+            if any(congratulate.values()) else ''
+
+
 class AddressBook(UserList):
-    def __init__(self):
+    def __init__(
+            self, logger: LoggerInterface, data_manager: LocalDataManager,
+            birthday: CongratulateBirthday
+    ):
+        super().__init__()
         self.data = []
         self.counter = -1
+        self.logger = logger
+        self.data_manager = data_manager
+        self.birthday = birthday
 
     def __str__(self):
         result = []
@@ -55,12 +155,6 @@ class AddressBook(UserList):
     def __getitem__(self, index):
         return self.data[index]
 
-    def log(self, action):
-        current_time = dt.strftime(dt.now(), '%H:%M:%S')
-        message = f'[{current_time}] {action}'
-        with open('logs.txt', 'a') as file:
-            file.write(f'{message}\n')
-
     def add(self, record):
         account = {'name': record.name,
                    'phones': record.phones,
@@ -69,22 +163,7 @@ class AddressBook(UserList):
                    'status': record.status,
                    'note': record.note}
         self.data.append(account)
-        self.log(f"Contact {record.name} has been added.")
-
-    def save(self, file_name):
-        with open(file_name + '.bin', 'wb') as file:
-            pickle.dump(self.data, file)
-        self.log("Addressbook has been saved!")
-
-    def load(self, file_name):
-        emptyness = os.stat(file_name + '.bin')
-        if emptyness.st_size != 0:
-            with open(file_name + '.bin', 'rb') as file:
-                self.data = pickle.load(file)
-            self.log("Addressbook has been loaded!")
-        else:
-            self.log('Adressbook has been created!')
-        return self.data
+        self.logger.log(f"Contact {record.name} has been added.")
 
     def search(self, pattern, category):
         result = []
@@ -120,7 +199,7 @@ class AddressBook(UserList):
                         new_contact = new_value.split(' ')
                         new_value = []
                         for number in new_contact:
-                             new_value.append(Phone(number).value)
+                            new_value.append(Phone(number).value)
                     if parameter in account.keys():
                         account[parameter] = new_value
                     else:
@@ -132,7 +211,7 @@ class AddressBook(UserList):
         except NameError:
             print('There is no such contact in address book!')
         else:
-            self.log(f"Contact {contact_name} has been edited!")
+            self.logger.log(f"Contact {contact_name} has been edited!")
             return True
         return False
 
@@ -141,38 +220,13 @@ class AddressBook(UserList):
         for account in self.data:
             if account['name'] == pattern:
                 self.data.remove(account)
-                self.log(f"Contact {account['name']} has been removed!")
+                self.logger.log(f"Contact {account['name']} has been removed!")
                 flag = True
             '''if pattern in account['phones']:
                         account['phones'].remove(pattern)
                         self.log.log(f"Phone number of {account['name']} has been removed!")'''
         return flag
 
-    def __get_current_week(self):
-        now = dt.now()
-        current_weekday = now.weekday()
-        if current_weekday < 5:
-            week_start = now - timedelta(days=2 + current_weekday)
-        else:
-            week_start = now - timedelta(days=current_weekday - 5)
-        return [week_start.date(), week_start.date() + timedelta(days=7)]
-
-    def congratulate(self):
-        result = []
-        WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        current_year = dt.now().year
-        congratulate = {'Monday': [], 'Tuesday': [], 'Wednesday': [], 'Thursday': [], 'Friday': []}
-        for account in self.data:
-            if account['birthday']:
-                new_birthday = account['birthday'].replace(year=current_year)
-                birthday_weekday = new_birthday.weekday()
-                if self.__get_current_week()[0] <= new_birthday.date() < self.__get_current_week()[1]:
-                    if birthday_weekday < 5:
-                        congratulate[WEEKDAYS[birthday_weekday]].append(account['name'])
-                    else:
-                        congratulate['Monday'].append(account['name'])
-        for key, value in congratulate.items():
-            if len(value):
-                result.append(f"{key}: {' '.join(value)}")
-        return '_' * 50 + '\n' + '\n'.join(result) + '\n' + '_' * 50
+    def congratulate_birthday(self):
+        return self.birthday.value_of(data=self.data)
 
